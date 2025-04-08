@@ -1,18 +1,20 @@
 author: Gilberto Hernandez, Rida Safdar
 id: snowflake-northstar-data-engineering
-summary: This Quickstart is part of the Snowflake Northstar Data Engineering workshop.
+summary: Build an end-to-end data pipeline in Snowflake using the I-T-D framework.
 categories: Data-Engineering
 environments: web
 status: Published 
 feedback link: https://github.com/Snowflake-Labs/sfguides/issues
 tags: Getting Started, Data Science, Data Engineering
 
-# Snowflake Northstar: Data Engineering with Snowflake
+# Getting Started: Data Engineering with Snowflake
 <!-- ------------------------ -->
 ## Overview 
 Duration: 1
 
-In this Snowflake Northstar workshop, we'll focus on data engineering with Snowflake. We'll specifically build an end-to-end data pipeline with Snowflake. We'll apply the  **Ingestion-Transformation–Delivery** framework, also known as **I-T-D**, to build the pipeline.
+### Overview
+
+In this Quickstart, we're going to focus on data engineering with Snowflake. We'll specifically build an end-to-end data pipeline with Snowflake. We'll apply the  **Ingestion-Transformation–Delivery** framework, also known as **I-T-D**, to build the pipeline.
 
 **Ingestion**
 
@@ -75,7 +77,7 @@ To complete this lab, you'll need a Snowflake account. A free Snowflake trial ac
 ![trial](./assets/trial.png)
 
 <!-- ------------------------ -->
-## Understanding the pipeline we'll build
+## Understand The Pipeline We'll Build
 Duration: 2
 
 Tasty Bytes is a food truck company that operates globally in many countries. You're a data engineer on the Tasty Bytes team, and you've recently learned from data analysts on the team that:
@@ -107,7 +109,7 @@ Here's how we'll do this:
 Let's get started!
 
 <!-- ------------------------ -->
-## Weather data from Snowflake Marketplace
+## Weather Data From Snowflake Marketplace
 Duration: 5
 
 Let's start by "loading" the raw weather data into Snowflake. It turns out that "loading" is really the wrong word here. 
@@ -133,7 +135,7 @@ This is a live dataset! No need to write ingestion logic to bring the data into 
 ![data](./assets/weathersource.png)
 
 <!-- ------------------------ -->
-## Load sales data from AWS S3
+## Load Sales Data From AWS S3
 Duration: 15
 
 Let's now load the Tasty Bytes sales data. This data is currently sitting across many CSV files in an AWS S3 bucket. Let's use Snowflake's COPY INTO command to load the data into your Snowflake account.
@@ -204,7 +206,7 @@ After running the file, you should have all of the data loaded into your account
 This completes the **Ingestion** aspect of our pipeline for this lab.
 
 <!-- ------------------------ -->
-## Data transformations with SQL
+## Data Transformations With SQL
 Duration: 10
 
 We now have the necessary data in our Snowflake account. To get closer to the insights that we need – weather-related data for the city of Hamburg, Germany – we need to use SQL to apply transformations to the data. This will bring us closer to the insights we're after. Let's begin.
@@ -299,11 +301,11 @@ GROUP BY dw.country_desc, dw.city_name, dw.date_valid_std
 ORDER BY dw.date_valid_std DESC;
 ```
 
-8. Now that we've found a likely culprit behind the drop in sales, so let's create a view that tracks windspeed. We'll use this view later on in our pipeline. Run the final block of SQL to create the view.
+8. Now that we've found a likely culprit behind the drop in sales, so let's create a view that tracks windspeed. We'll use this view later on in our pipeline. Locate the next block of SQL. Add `weather_hamburg` to the end of the first line, so that the line reads `CREATE OR REPLACE VIEW tasty_bytes.harmonized.weather_hamburg` and names our view. Run the final block of SQL to create the view.
 
 ```sql
 -- Create a view that tracks windspeed for Hamburg, Germany
-CREATE OR REPLACE VIEW tasty_bytes.harmonized.--add name of view
+CREATE OR REPLACE VIEW tasty_bytes.harmonized. --add name of view
     AS
 SELECT
     dw.country_desc,
@@ -325,7 +327,7 @@ Views also help organize exactly which aspects of data might be valuable, and ai
 We'll use these views in our pipeline later on.
 
 <!-- ------------------------ -->
-## Create user-defined functions to aid with calculations
+## Create User-Defined Functions For Calculations
 Duration: 6
 
 We're missing some critical data for our pipeline. Our analysts have requested that we track certain weather measurements using the metric system. We are tracking a country in Europe after all.
@@ -367,7 +369,7 @@ CREATE OR REPLACE /*  */ tasty_bytes.analytics.inch_to_millimeter(inch NUMBER(35
 Great! We'll use these functions to expand the views we're planning on using in our pipeline.
 
 <!-- ------------------------ -->
-## Using the UDFs for data transformations
+## Apply UDFs For Data Transformations
 Duration: 6
 
 Let's now use the UDFs to add new columns in our views. These new columns will contains the converted values for temperature and precipitation.
@@ -398,7 +400,7 @@ Great job! We've transformed our data using SQL to create views, and we've used 
 This completes the **Transformation** aspect of our pipeline for this lab.
 
 <!-- ------------------------ -->
-## Delivering insights with a Streamlit in Snowflake app
+## Deliver Insights With Streamlit in Snowflake
 Duration: 6
 
 We now have the insights that we need, and we can now also deliver them to our data analysts. We have views that track the weather and sales in Hamburg, Germany. So how exactly will we make these insights easily accessible for our data analysts?
@@ -413,7 +415,7 @@ Let's go ahead and create the app for our analysts.
 
 2. Navigate to "Projects", then click on "Streamlit".
 
-3. At the top, create a new Streamlit app. Name the app whatever you'd like.
+3. At the top, create a new Streamlit app. Name the app "HAMBURG_GERMANY_TRENDS".
 
 4. For the app location, select **TASTY_BYTES** as the database, and **HARMONIZED** for the schema. Leave everything else as-is.
 
@@ -440,10 +442,14 @@ At the top, you could imagine clicking on "Share" and sharing the app with relev
 With this application, we've now completed our end-to-end data pipeline. This completes the **Delivery** aspect of our pipeline for this lab.
 
 <!-- ------------------------ -->
-## Conclusion 
+## Conclusion And Resources
 Duration: 1
 
+### Conclusion
+
 Congratulations! You've built an end-to-end data pipeline in Snowflake using the **Ingestion-Transformation–Delivery** framework, also known as **I-T-D**. Let's recap what you did. 
+
+### What You Learned
 
 You built a data pipeline that tracks weather and sales data for Tasty Bytes food trucks in the city of Hamburg, Germany. As part of the I-T-D framework, you:
 
@@ -468,15 +474,12 @@ Delivered a final data product using:
 
 * Streamlit in Snowflake
 
-Congratulations! For more resources, check out the following:
+Congratulations! 
 
-* You can build the objects we used in the pipeline using Snowpark for Python as well. The code to do this is provided in the **hamburg_sales_snowpark.ipynb** Notebook file in the repo.
+### Resources
+
+For more resources, check out the following:
+
+* You can build the objects we used in the pipeline using Snowpark for Python as well. The code to do this is provided in the [**hamburg_sales_snowpark.ipynb** Notebook file in the repo](https://github.com/Snowflake-Labs/sfguide-snowflake-northstar-data-engineering/blob/main/01_transformation/hamburg_sales_snowpark.ipynb).
 
 * Learn more at [Snowflake Northstar](https://www.snowflake.com/en/developers/northstar/) for developers.
-
-
-**Receiving a Snowflake Northstar: Data Engineering badge**
-
-1. Be sure to follow and complete the instructions provided by your lab instructor during your event. The instructor will guide you through running the automated tests in your account so that you can receive your badge.
-
-2. If you successfully pass the automated tests, you can expect to receive your badge via email within 48 hours.
