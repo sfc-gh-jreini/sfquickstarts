@@ -7,7 +7,7 @@ environments: web
 status: Published
 feedback link: https://github.com/Snowflake-Labs/sfguides/issues
 fork repo link: https://github.com/Snowflake-Labs/sfguide-end-to-end-external-ai-agent-observability
-tags: AI Observability, TruLens, Agents, Cortex Analyst, Cortex Search, Evaluation, Monitoring
+tags: AI Observability, TruLens, Agents, Analyst, Cortex Search, Evaluation, Monitoring
 
 
 
@@ -16,14 +16,24 @@ tags: AI Observability, TruLens, Agents, Cortex Analyst, Cortex Search, Evaluati
 
 ## Overview
 
-Duration: 5
 
-Modern AI agents orchestrate multiple tools — from text-to-SQL engines to knowledge base retrieval — making them powerful but difficult to debug and evaluate. When an agent chains Cortex Analyst for structured data queries and Cortex Search for unstructured knowledge retrieval, you need deep visibility into each step: what tool was called, what it returned, and whether the final answer was any good.
+Modern AI agents orchestrate multiple tools — from text-to-SQL engines to knowledge base retrieval — making them powerful but difficult to debug and evaluate. You need deep visibility into each step: what tool was called, what it returned, and whether the final answer was any good.
+
+**Snowflake is your AI observability backend** — for evals, traces, and insights — regardless of where your agents run or which framework you use. Mix and match whatever agent SDK, orchestrator, model provider, and tools fit your stack. Whatever you build, you can stream OpenTelemetry traces and evaluation results into Snowflake and analyze them alongside the rest of your data.
 
 This guide walks you through building a **Support Intelligence Agent** with full observability coverage — from batch evaluation with ground truth to production monitoring with a live dashboard. You'll use the [OpenAI Agent SDK](https://github.com/openai/openai-agents-python) for agent orchestration, [TruLens](https://www.trulens.org/) for instrumentation and evaluation, and [Snowflake AI Observability](https://docs.snowflake.com/en/user-guide/snowflake-cortex/ai-observability) as the unified telemetry backend.
 
+### Why Snowflake AI Observability
+
+If you're already considering Cortex Agents, Snowflake AI Observability is the natural complement — and just as importantly, it works for any agent stack you choose:
+
+- **Where your trusted data already lives.** Snowflake is the platform for insights across all of your data and systems. Co-locating your AI traces and evaluations with the analytical data they reference (and the rest of your business data) means root-cause analysis is one SQL join away — no extra ETL, no extra vendor.
+- **Optimized query performance for OTEL event tables.** Trace data is stored in purpose-built event tables with optimized scan and filter performance, so timeseries dashboards, p95 rollups, and trace drill-downs stay fast as your trace volume grows.
+- **Low cost at AI-trace scale.** AI tracing generates a lot of data — every span, every retrieved chunk, every LLM input/output. Snowflake's storage economics make it cheap to keep months of full-fidelity traces, not just sampled summaries.
+- **One governance and security model.** Roles, masking, row access policies, and audit trails apply uniformly to your traces, evaluations, and source data.
+
 ### What You Will Learn
-- How to build an AI agent with Cortex Analyst and Cortex Search tools
+- How to build an AI agent with Analyst and Cortex Search tools
 - How to instrument agent code with TruLens `@instrument` decorators for OTEL-based tracing
 - How to define custom client-side metrics (SQL Agreement, Precision@k, Recall@k) using `Metric` and `Selector`
 - How to run batch evaluations with `RunConfig` and `compute_metrics()`
@@ -41,7 +51,7 @@ This guide walks you through building a **Support Intelligence Agent** with full
 - A Streamlit-in-Snowflake monitoring dashboard
 
 ### Prerequisites
-- A Snowflake account with [Cortex LLM Functions](https://docs.snowflake.com/en/user-guide/snowflake-cortex/llm-functions), [Cortex Search](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/cortex-search-overview), and [Cortex Analyst](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst) enabled.
+- A Snowflake account with [Cortex LLM Functions](https://docs.snowflake.com/en/user-guide/snowflake-cortex/llm-functions), [Cortex Search](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/cortex-search-overview), and [Analyst](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst) enabled.
 - A Snowflake account login with a role that can create databases, warehouses, stages, Cortex Search services, and Streamlit apps.
 - A [Programmatic Access Token (PAT)](https://docs.snowflake.com/en/user-guide/admin-programmatic-access-token) for REST API authentication.
 - Python 3.10–3.12 with [uv](https://docs.astral.sh/uv/) (recommended) or pip.
@@ -54,7 +64,7 @@ The system architecture flows as follows:
 
 1. **React Chat UI** sends questions via SSE to the **FastAPI Backend**
 2. **FastAPI** uses `@trace_with_run` to create traced invocations
-3. **OpenAI Agent SDK** routes to **Cortex Analyst** (structured queries) or **Cortex Search** (knowledge base)
+3. **OpenAI Agent SDK** routes to **Analyst** (structured queries) or **Cortex Search** (knowledge base)
 4. **TruLens** instruments each layer with semantic span types and writes traces to **Snowflake AI Observability Events**
 5. **Batch Evaluation** runs ground-truth metrics (SQL Agreement, Precision@k, Recall@k) plus server-side LLM-judge metrics (answer_relevance, groundedness, context_relevance, coherence)
 6. **Streamlit Dashboard** queries the event table for real-time production monitoring
@@ -64,7 +74,6 @@ The system architecture flows as follows:
 
 ## Setup Snowflake Environment
 
-Duration: 10
 
 ### Clone the Repository
 
@@ -80,14 +89,14 @@ The repository is organized as follows:
 ```
 sfguide-end-to-end-external-ai-agent-observability/
 ├── setup_snowflake.sql          # DDL: database, tables, Cortex Search service, ground truth
-├── semantic_model.yaml          # Cortex Analyst semantic model
+├── semantic_model.yaml          # Analyst semantic model
 ├── pyproject.toml               # Python dependencies
 ├── run_eval.py                  # Batch evaluation entry point
 ├── server.py                    # FastAPI production chat server
 ├── src/
 │   ├── agent/
 │   │   ├── app.py               # Agent definition + AgentApp wrapper
-│   │   └── tools.py             # Cortex Analyst & Cortex Search tools
+│   │   └── tools.py             # Analyst & Cortex Search tools
 │   ├── services/
 │   │   └── config.py            # Snowflake connection config
 │   ├── eval/
@@ -146,7 +155,7 @@ PUT file://semantic_model.yaml @SUPPORT_INTELLIGENCE.DATA.MODELS
     AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
 ```
 
-The semantic model defines dimensions (TICKET_ID, CUSTOMER_NAME, PRIORITY, CATEGORY, STATUS, ASSIGNED_AGENT), time dimensions (CREATED_DATE, RESOLVED_DATE), facts (FIRST_RESPONSE_HOURS, RESOLUTION_HOURS, CSAT_SCORE), aggregate metrics, and verified queries for Cortex Analyst.
+The semantic model defines dimensions (TICKET_ID, CUSTOMER_NAME, PRIORITY, CATEGORY, STATUS, ASSIGNED_AGENT), time dimensions (CREATED_DATE, RESOLVED_DATE), facts (FIRST_RESPONSE_HOURS, RESOLUTION_HOURS, CSAT_SCORE), aggregate metrics, and verified queries for Analyst.
 
 ### Set Up the Python Environment
 
@@ -183,7 +192,6 @@ export SNOWFLAKE_CONNECTION_NAME=default
 
 ## Build the AI Agent
 
-Duration: 15
 
 The Support Intelligence Agent uses the [OpenAI Agent SDK](https://github.com/openai/openai-agents-python) to orchestrate two Snowflake Cortex tools. The agent runs against Snowflake-hosted LLMs via the Cortex REST API.
 
@@ -204,7 +212,7 @@ CORTEX_SEARCH_SERVICE = "SUPPORT_INTELLIGENCE.DATA.KB_SEARCH"
 
 Two tools are defined using `@function_tool` from the OpenAI Agent SDK:
 
-**`query_ticket_metrics`** — Calls the Cortex Analyst REST API with the semantic model to convert natural language questions into SQL, execute it, and return results:
+**`query_ticket_metrics`** — Calls the Analyst REST API with the semantic model to convert natural language questions into SQL, execute it, and return results:
 
 ```python
 @function_tool
@@ -306,7 +314,6 @@ class _SnowflakeChatCompletions:
 
 ## Instrument with TruLens
 
-Duration: 10
 
 ### Understanding Span Types
 
@@ -362,7 +369,6 @@ Key components:
 
 ## Define Ground Truth and Custom Metrics
 
-Duration: 15
 
 ### Ground Truth Tables
 
@@ -442,7 +448,6 @@ The `Selector` extracts `RETRIEVED_CONTEXTS` from `RETRIEVAL` spans in the trace
 
 ## Run Batch Evaluation
 
-Duration: 10
 
 The batch evaluation script ([`run_eval.py`](https://github.com/Snowflake-Labs/sfguide-end-to-end-external-ai-agent-observability/blob/main/run_eval.py)) executes all test queries against the agent and computes both client-side and server-side metrics.
 
@@ -499,11 +504,24 @@ This triggers:
 
 All results are written to the AI Observability event table and visible in Snowsight.
 
+### Evaluations View
+
+Navigate to **Monitoring > AI Observability > Evaluations** to see:
+- Run-level metric summaries with pass/fail rates
+- Per-query evaluation scores for all metrics
+- Score distributions and comparisons across runs
+- Detailed evaluation reasons (the `reason` field from custom metrics)
+
+![Evaluations](assets/evaluations.png)
+
+### Comparing Runs
+
+Run the batch evaluation multiple times (e.g., with different prompts or models) to create multiple runs. The Evaluations UI lets you compare metric scores across runs side by side, making it easy to identify improvements or regressions.
+
 <!-- ------------------------ -->
 
 ## Production Chat with Live Tracing
 
-Duration: 10
 
 The FastAPI server ([`server.py`](https://github.com/Snowflake-Labs/sfguide-end-to-end-external-ai-agent-observability/blob/main/server.py)) provides a production-ready chat backend with real-time tracing via `@trace_with_run`.
 
@@ -556,7 +574,7 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 
 The [`frontend/`](https://github.com/Snowflake-Labs/sfguide-end-to-end-external-ai-agent-observability/tree/main/frontend) directory contains a React chat UI with:
 - SSE streaming with thinking indicators
-- Tool call status display (showing "Calling Cortex Analyst..." / "Cortex Search returned results")
+- Tool call status display (showing "Calling Analyst..." / "Cortex Search returned results")
 - Dark theme with suggestion chips
 
 To run:
@@ -573,98 +591,271 @@ The frontend proxies `/api` requests to `localhost:8000` via Vite config.
 
 ## Build the Monitoring Dashboard
 
-Duration: 15
 
-The Streamlit dashboard ([`monitoring_dashboard/streamlit_app.py`](https://github.com/Snowflake-Labs/sfguide-end-to-end-external-ai-agent-observability/blob/main/monitoring_dashboard/streamlit_app.py)) provides production monitoring by querying `SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS` directly.
+Once your agent is in production, every traced invocation lands in `SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS`. This event table is the foundation for monitoring trends and doing root-cause analysis on real user traffic — you can query it directly with SQL to build any view you need (Streamlit, Snowsight dashboards, scheduled alerts, etc.).
 
-<img src="assets/monitoring.png" width="100%">
+The reference [`monitoring_dashboard/streamlit_app.py`](https://github.com/Snowflake-Labs/sfguide-end-to-end-external-ai-agent-observability/blob/main/monitoring_dashboard/streamlit_app.py) is one example of what you can build on top of these queries.
 
-### Dashboard Features
+![Monitoring Dashboard](assets/monitoring.png)
 
-Branded as **Agent Monitoring**, the dashboard is a single timeseries view over trace data, tool calls, eval scores, and latency from Snowflake AI Observability.
+### The Event Table Schema
 
-**KPI Header** — Top-line counters for the selected window: Total Queries, Avg Latency, Tool / Retrieval Calls, LLM Generations, and Avg Eval Score.
+Every span and every evaluation is one row. The key attributes you'll filter and project on:
 
-**Combined Latency + Eval Timeseries** — One chart overlays latency (left axis: blue p50 line, shaded p50–p95 band, dashed p95, red dots for top outliers) with eval metrics (right axis: one line per metric — `answer_relevance`, `coherence`, `context_relevance`, `groundedness`). Use the metric pills above the chart to add/remove overlays.
+- `TIMESTAMP`, `START_TIMESTAMP` — span end and start times (use `TIMESTAMPDIFF('MILLISECOND', START_TIMESTAMP, TIMESTAMP)` for latency)
+- `RECORD_TYPE = 'SPAN'` — every observability event is a span; eval results are also spans with `span_type` `'eval'` or `'eval_root'`
+- `TRACE:"trace_id"::STRING` — groups all spans from a single user query
+- `RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING` — `record_root | tool | retrieval | generation | eval | eval_root`
+- `RECORD_ATTRIBUTES:"ai.observability.run.name"::STRING` — run name (batch run or production deployment)
+- `RECORD_ATTRIBUTES:"snow.ai.observability.object.name"::STRING` — agent name
+- `RECORD_ATTRIBUTES:"ai.observability.record_id"::STRING` — joins root spans to their evaluations
+- `RECORD_ATTRIBUTES:"ai.observability.record_root.input"` / `record_root.output` — user question and final answer
+- `RECORD_ATTRIBUTES:"ai.observability.eval_root.metric_name"` / `eval_root.score` — client-side metric results
+- `RECORD_ATTRIBUTES:"ai.observability.eval.metric_name"` / `eval.score` / `eval.target_record_id` — server-side metric results
 
-**Find Problematic Traces** — Drag a rectangle on the chart to select a time window. The dashboard surfaces every trace in that window in a sortable table with `TIMESTAMP`, `LATENCY_MS`, `WORST_SCORE`, per-metric scores, `INPUT_QUESTION`, and `TRACE_ID` — purpose-built for latency/quality root-cause analysis. Select any row to drill into the full trace (question, answer, Analyst interpretation + SQL + results, and retrieved Search chunks).
+### Example 1 — KPI Rollup
 
-<img src="assets/find-problematic-traces.png" width="100%">
+Top-line counters for any time window — total queries, average latency, tool/retrieval calls, LLM generations, and average eval score:
 
-### Key Queries
-
-The dashboard uses parameterized queries against the event table. For example, loading spans:
-
-```python
-@st.cache_data(ttl=timedelta(minutes=2))
-def load_spans(run_names: tuple):
-    run_list = ",".join(f"'{r}'" for r in run_names)
-    return conn.query(f"""
-        SELECT
-            TIMESTAMP,
-            RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING AS span_type,
-            RECORD_ATTRIBUTES:"ai.observability.run.name"::STRING AS run_name,
-            TIMESTAMPDIFF('MILLISECOND', START_TIMESTAMP, TIMESTAMP) AS latency_ms,
-            TRACE:"trace_id"::STRING AS trace_id
-        FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
-        WHERE RECORD_TYPE = 'SPAN'
-          AND TIMESTAMP > DATEADD('day', -1, CURRENT_TIMESTAMP())
-          AND RECORD_ATTRIBUTES:"ai.observability.run.name"::STRING IN ({run_list})
-        ORDER BY TIMESTAMP ASC
-    """)
+```sql
+WITH spans AS (
+    SELECT
+        RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING AS span_type,
+        TIMESTAMPDIFF('MILLISECOND', START_TIMESTAMP, TIMESTAMP) AS latency_ms
+    FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+    WHERE RECORD_TYPE = 'SPAN'
+      AND TIMESTAMP > DATEADD('day', -1, CURRENT_TIMESTAMP())
+),
+evals AS (
+    SELECT
+        COALESCE(
+            RECORD_ATTRIBUTES:"ai.observability.eval_root.score"::FLOAT,
+            RECORD_ATTRIBUTES:"ai.observability.eval.score"::FLOAT
+        ) AS score
+    FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+    WHERE RECORD_TYPE = 'SPAN'
+      AND RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING IN ('eval', 'eval_root')
+      AND TIMESTAMP > DATEADD('day', -1, CURRENT_TIMESTAMP())
+)
+SELECT
+    (SELECT COUNT(*) FROM spans WHERE span_type = 'record_root') AS total_queries,
+    (SELECT AVG(latency_ms) FROM spans WHERE span_type = 'record_root') AS avg_latency_ms,
+    (SELECT COUNT(*) FROM spans WHERE span_type IN ('tool', 'retrieval')) AS total_tool_calls,
+    (SELECT COUNT(*) FROM spans WHERE span_type = 'generation') AS total_gen_calls,
+    (SELECT AVG(score) FROM evals WHERE score IS NOT NULL) AS avg_eval_score;
 ```
+
+### Example 2 — Latency Trend (p50 / p95 / max)
+
+Bucket root spans by hour or day and compute percentiles to spot regressions or traffic-driven slowdowns:
+
+```sql
+SELECT
+    DATE_TRUNC('hour', TIMESTAMP) AS bucket_ts,
+    APPROX_PERCENTILE(TIMESTAMPDIFF('MILLISECOND', START_TIMESTAMP, TIMESTAMP), 0.50) AS p50_ms,
+    APPROX_PERCENTILE(TIMESTAMPDIFF('MILLISECOND', START_TIMESTAMP, TIMESTAMP), 0.95) AS p95_ms,
+    MAX(TIMESTAMPDIFF('MILLISECOND', START_TIMESTAMP, TIMESTAMP)) AS max_ms,
+    COUNT(*) AS query_count
+FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+WHERE RECORD_TYPE = 'SPAN'
+  AND RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING = 'record_root'
+  AND TIMESTAMP > DATEADD('day', -7, CURRENT_TIMESTAMP())
+GROUP BY 1
+ORDER BY 1;
+```
+
+### Example 3 — Eval Score Trends by Metric
+
+Union client-side (`eval_root`) and server-side (`eval`) results into one timeseries per metric to watch quality drift:
+
+```sql
+WITH unioned AS (
+    SELECT
+        TIMESTAMP,
+        RECORD_ATTRIBUTES:"ai.observability.eval_root.metric_name"::STRING AS metric_name,
+        'client-side' AS source,
+        RECORD_ATTRIBUTES:"ai.observability.eval_root.score"::FLOAT AS score
+    FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+    WHERE RECORD_TYPE = 'SPAN'
+      AND RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING = 'eval_root'
+      AND TIMESTAMP > DATEADD('day', -7, CURRENT_TIMESTAMP())
+    UNION ALL
+    SELECT
+        TIMESTAMP,
+        RECORD_ATTRIBUTES:"ai.observability.eval.metric_name"::STRING AS metric_name,
+        'server-side' AS source,
+        RECORD_ATTRIBUTES:"ai.observability.eval.score"::FLOAT AS score
+    FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+    WHERE RECORD_TYPE = 'SPAN'
+      AND RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING = 'eval'
+      AND TIMESTAMP > DATEADD('day', -7, CURRENT_TIMESTAMP())
+)
+SELECT
+    DATE_TRUNC('hour', TIMESTAMP) AS bucket_ts,
+    metric_name,
+    source,
+    AVG(score) AS avg_score,
+    MIN(score) AS min_score,
+    MAX(score) AS max_score,
+    COUNT(*) AS n
+FROM unioned
+WHERE score IS NOT NULL AND metric_name IS NOT NULL
+GROUP BY 1, 2, 3
+ORDER BY 1, 2;
+```
+
+### Example 4 — Top Latency Outliers
+
+Surface the slowest individual queries — the dots that sit on top of your p95 line — with the question and `trace_id` so you can drill in:
+
+```sql
+SELECT
+    TIMESTAMP,
+    RECORD_ATTRIBUTES:"ai.observability.run.name"::STRING AS run_name,
+    RECORD_ATTRIBUTES:"ai.observability.record_root.input"::STRING AS input_question,
+    TIMESTAMPDIFF('MILLISECOND', START_TIMESTAMP, TIMESTAMP) AS latency_ms,
+    TRACE:"trace_id"::STRING AS trace_id
+FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+WHERE RECORD_TYPE = 'SPAN'
+  AND RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING = 'record_root'
+  AND TIMESTAMP > DATEADD('day', -1, CURRENT_TIMESTAMP())
+ORDER BY latency_ms DESC
+LIMIT 50;
+```
+
+### Example 5 — Tool Mix and Failure Rate
+
+Understand which tools the agent is calling and how often they error:
+
+```sql
+SELECT
+    RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING AS span_type,
+    RECORD_ATTRIBUTES:"ai.observability.call.function"::STRING AS tool_function,
+    COUNT(*) AS calls,
+    SUM(CASE WHEN RECORD_ATTRIBUTES:"ai.observability.error" IS NOT NULL THEN 1 ELSE 0 END) AS errors
+FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+WHERE RECORD_TYPE = 'SPAN'
+  AND RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING IN ('tool', 'retrieval')
+  AND TIMESTAMP > DATEADD('day', -1, CURRENT_TIMESTAMP())
+GROUP BY 1, 2
+ORDER BY calls DESC;
+```
+
+### Root-Cause Analysis: Find Problematic Traces
+
+When latency spikes or eval scores drop, you need to drill from "the chart" to "the bad trace." Join root spans to their evaluations on `record_id`, pivot scores by metric, and surface the worst offenders in a window:
+
+```sql
+WITH roots AS (
+    SELECT
+        TIMESTAMP,
+        TIMESTAMPDIFF('MILLISECOND', START_TIMESTAMP, TIMESTAMP) AS latency_ms,
+        RECORD_ATTRIBUTES:"ai.observability.record_id"::STRING AS record_id,
+        RECORD_ATTRIBUTES:"ai.observability.record_root.input"::STRING AS input_question,
+        TRACE:"trace_id"::STRING AS trace_id
+    FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+    WHERE RECORD_TYPE = 'SPAN'
+      AND TIMESTAMP BETWEEN :window_start AND :window_end
+      AND RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING = 'record_root'
+),
+evals AS (
+    SELECT
+        RECORD_ATTRIBUTES:"ai.observability.eval.target_record_id"::STRING AS record_id,
+        COALESCE(
+            RECORD_ATTRIBUTES:"ai.observability.eval_root.metric_name"::STRING,
+            RECORD_ATTRIBUTES:"ai.observability.eval.metric_name"::STRING
+        ) AS metric_name,
+        COALESCE(
+            RECORD_ATTRIBUTES:"ai.observability.eval_root.score"::FLOAT,
+            RECORD_ATTRIBUTES:"ai.observability.eval.score"::FLOAT
+        ) AS score
+    FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+    WHERE RECORD_TYPE = 'SPAN'
+      AND TIMESTAMP BETWEEN :window_start AND DATEADD('day', 2, :window_end)
+      AND RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING IN ('eval', 'eval_root')
+),
+agg AS (
+    SELECT
+        record_id,
+        MIN(score) AS worst_score,
+        MIN(CASE WHEN metric_name = 'groundedness' THEN score END) AS groundedness,
+        MIN(CASE WHEN metric_name = 'answer_relevance' THEN score END) AS answer_relevance,
+        MIN(CASE WHEN metric_name = 'context_relevance' THEN score END) AS context_relevance
+    FROM evals
+    GROUP BY record_id
+)
+SELECT
+    r.timestamp, r.latency_ms, r.input_question,
+    a.worst_score, a.groundedness, a.answer_relevance, a.context_relevance,
+    r.trace_id
+FROM roots r
+LEFT JOIN agg a ON r.record_id = a.record_id
+ORDER BY r.latency_ms DESC, a.worst_score ASC
+LIMIT 300;
+```
+
+![Find Problematic Traces](assets/find-problematic-traces.png)
+
+### Drill Into a Single Trace
+
+Once you have a `trace_id`, fetch every span — the user question, the agent's answer, each tool/retrieval/generation step, token counts, Analyst SQL, retrieved Search chunks, and any evaluations:
+
+```sql
+WITH base AS (
+    SELECT
+        TIMESTAMP AS end_ts,
+        START_TIMESTAMP AS start_ts,
+        TRACE:"trace_id"::STRING AS trace_id,
+        TRACE:"span_id"::STRING AS span_id,
+        RECORD:"name"::STRING AS span_name,
+        RECORD_ATTRIBUTES:"ai.observability.span_type"::STRING AS span_type,
+        RECORD_ATTRIBUTES:"ai.observability.record_id"::STRING AS record_id,
+        RECORD_ATTRIBUTES:"ai.observability.call.function"::STRING AS tool_function,
+        RECORD_ATTRIBUTES:"ai.observability.analyst.generated_sql"::STRING AS analyst_generated_sql,
+        RECORD_ATTRIBUTES:"ai.observability.analyst.query_results"::STRING AS analyst_query_results,
+        RECORD_ATTRIBUTES:"ai.observability.retrieval.retrieved_contexts"::STRING AS retrieved_contexts,
+        RECORD_ATTRIBUTES:"ai.observability.record_root.input"::STRING AS input_question,
+        RECORD_ATTRIBUTES:"ai.observability.record_root.output"::STRING AS output_answer,
+        RECORD_ATTRIBUTES:"ai.observability.cost.model"::STRING AS model_name,
+        RECORD_ATTRIBUTES:"ai.observability.cost.num_tokens"::INT AS total_tokens,
+        RECORD_ATTRIBUTES:"ai.observability.eval.target_record_id"::STRING AS eval_target_record_id,
+        TIMESTAMPDIFF('MILLISECOND', START_TIMESTAMP, TIMESTAMP) AS latency_ms
+    FROM SNOWFLAKE.LOCAL.AI_OBSERVABILITY_EVENTS
+    WHERE RECORD_TYPE = 'SPAN'
+      AND TIMESTAMP > DATEADD('day', -7, CURRENT_TIMESTAMP())
+),
+target_record_id AS (
+    SELECT record_id FROM base
+    WHERE trace_id = :trace_id AND span_type = 'record_root' LIMIT 1
+)
+SELECT *
+FROM base
+WHERE trace_id = :trace_id
+   OR eval_target_record_id IN (SELECT record_id FROM target_record_id)
+ORDER BY start_ts ASC;
+```
+
+This gives you the full span waterfall (record_root → tool/retrieval → generation) plus all evaluations attached to that trace's `record_id` — everything you need for a complete root-cause story.
 
 ### Deploying to Snowflake
 
-Deploy the dashboard as a Streamlit-in-Snowflake app:
+The reference dashboard can be deployed as a Streamlit-in-Snowflake app:
 
 ```bash
 cd monitoring_dashboard
 snow streamlit deploy --open
 ```
 
-This uses the [`snowflake.yml`](https://github.com/Snowflake-Labs/sfguide-end-to-end-external-ai-agent-observability/blob/main/monitoring_dashboard/snowflake.yml) configuration to deploy with:
-- Runtime: `SYSTEM$ST_CONTAINER_RUNTIME_PY3_11`
-- Compute pool: `SYSTEM_COMPUTE_POOL_CPU`
-- External access: `PYPI_ACCESS_INTEGRATION` (for altair and other packages)
-
-<!-- ------------------------ -->
-
-## Explore in Snowsight
-
-Duration: 5
-
-After running batch evaluation or production chat, navigate to the **AI Observability** section in Snowsight to explore your results.
-
-### Traces View
-
-Navigate to **Monitoring > AI Observability > Traces** to see:
-- All traced invocations grouped by run
-- Span waterfall showing the execution timeline of RECORD_ROOT → GENERATION → TOOL/RETRIEVAL → GENERATION
-- Span details with all semantic attributes (input/output, SQL, retrieved contexts, token counts)
-- Latency breakdown per span
-
-### Evaluations View
-
-Navigate to **Monitoring > AI Observability > Evaluations** to see:
-- Run-level metric summaries with pass/fail rates
-- Per-query evaluation scores for all metrics
-- Score distributions and comparisons across runs
-- Detailed evaluation reasons (the `reason` field from custom metrics)
-
-### Comparing Runs
-
-Run the batch evaluation multiple times (e.g., with different prompts or models) to create multiple runs. The Evaluations UI lets you compare metric scores across runs side by side, making it easy to identify improvements or regressions.
+This uses the [`snowflake.yml`](https://github.com/Snowflake-Labs/sfguide-end-to-end-external-ai-agent-observability/blob/main/monitoring_dashboard/snowflake.yml) configuration. The same patterns work just as well in Snowsight dashboards, scheduled alerts, or any BI tool that can query Snowflake.
 
 <!-- ------------------------ -->
 
 ## Conclusion and Resources
 
-Duration: 2
 
 Congratulations! You've built a complete AI agent observability pipeline covering:
 
-- **Agent Construction**: Multi-tool agent with Cortex Analyst and Cortex Search via OpenAI Agent SDK
+- **Agent Construction**: Multi-tool agent with Analyst and Cortex Search via OpenAI Agent SDK
 - **Instrumentation**: Semantic span types (RECORD_ROOT, TOOL, RETRIEVAL, GENERATION) with TruLens `@instrument`
 - **Ground Truth**: Golden SQL and expected retrieval chunks stored in Snowflake tables
 - **Custom Metrics**: SQL Agreement, Precision@k, Recall@k using `Metric` + `Selector` API
@@ -679,6 +870,6 @@ Congratulations! You've built a complete AI agent observability pipeline coverin
 - [Snowflake AI Observability Documentation](https://docs.snowflake.com/en/user-guide/snowflake-cortex/ai-observability)
 - [TruLens Documentation](https://www.trulens.org/getting_started/)
 - [OpenAI Agent SDK](https://github.com/openai/openai-agents-python)
-- [Cortex Analyst Documentation](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst)
+- [Analyst Documentation](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst)
 - [Cortex Search Documentation](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/cortex-search-overview)
 - [Getting Started with AI Observability Quickstart](https://quickstarts.snowflake.com/guide/getting-started-with-ai-observability/)
